@@ -1,3 +1,6 @@
+# Training outputs: checkpoints, models, previews, and loss logs
+training_checkpoints/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
