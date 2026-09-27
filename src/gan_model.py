@@ -7,6 +7,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
 
+""" SETTINGS LOOKS LIKE THIS
 settings = {
     "model_name": "mnist_gan",
     "buffer_size": 60000,
@@ -18,6 +19,7 @@ settings = {
     "save_interval": 15,
     "checkpoint_dir": "training_checkpoints",
 }
+"""
 
 
 class GAN:
@@ -72,23 +74,49 @@ class GAN:
             seed=[42, 0],  # type: ignore
         )
 
-    def load_data(self, dir_path: Path | None):
-        if dir_path:
-            pass  # if local dir
-        else:  # dl test
-            (train_images, _), (_, _) = tf.keras.datasets.mnist.load_data()
+    def load_data(self, images):
+        images = np.asarray(images)
 
-            train_images = train_images.reshape(-1, 28, 28, 1).astype("float32")
-
-            # Normalize imgs to [-1, 1]
-            train_images = (train_images - 127.5) / 127.5
-
-            # Batch and shuffle the data
-            self.train_dataset = (
-                tf.data.Dataset.from_tensor_slices(train_images)
-                .shuffle(self.buffer_size)
-                .batch(self.batch_size)
+        if images.ndim != 4 or images.shape[-1] != 3:
+            raise ValueError(
+                f"Expected RGB images shapes (N, height, width, 3).Got {images.shape}."
             )
+
+        if len(images) == 0:
+            raise ValueError("The dataset containes no images.")
+
+        def prepare_image(image):
+            image = tf.cast(image, tf.float32)
+            image = tf.image.resize(image, (32, 32))
+            return (image - 127.5) / 127.5
+
+        self.train_dataset = (
+            tf.data.Dataset.from_tensor_slices(images)
+            .shuffle(self.buffer_size)
+            .map(prepare_image, num_parallel_calls=tf.data.AUTOTUNE)
+            .batch(self.batch_size)
+            .prefetch(tf.data.AUTOTUNE)
+        )
+
+    def load_image_directory(self, dir_path: Path | str):
+        dir_path = Path(dir_path)
+
+        if not dir_path.is_dir():
+            raise ValueError(f"Image directory does not exist: {dir_path}")
+
+        dataset = tf.keras.utils.image_dataset_from_directory(
+            str(dir_path),
+            labels=None,
+            color_mode="rgb",
+            image_size=(32, 32),
+            batch_size=self.batch_size,
+            shuffle=True,
+        )
+
+        self.train_dataset = dataset.map(
+            lambda images: (images - 127.5) / 127.5,
+            num_parallel_calls=tf.data.AUTOTUNE,
+        ).prefetch(tf.data.AUTOTUNE)
 
     def handle_relu(self, leaky, model):
         if leaky:
@@ -100,11 +128,11 @@ class GAN:
         model = tf.keras.Sequential()
 
         model.add(layers.Input(shape=(self.noise_dim,)))
-        model.add(layers.Dense(7 * 7 * 256, use_bias=False))
+        model.add(layers.Dense(8 * 8 * 256, use_bias=False))
         model.add(layers.BatchNormalization())
         self.handle_relu(leaky, model)
 
-        model.add(layers.Reshape((7, 7, 256)))
+        model.add(layers.Reshape((8, 8, 256)))
 
         model.add(
             layers.Conv2DTranspose(
@@ -124,7 +152,7 @@ class GAN:
 
         model.add(
             layers.Conv2DTranspose(
-                1,
+                3,
                 (5, 5),
                 strides=[2, 2],
                 padding="same",
@@ -137,13 +165,14 @@ class GAN:
 
     def create_discriminator(self, leaky: bool = False):
         model = tf.keras.Sequential()
+
+        model.add(layers.Input(shape=(32, 32, 3)))
         model.add(
             layers.Conv2D(
                 64,
                 (5, 5),
                 strides=(2, 2),
                 padding="same",
-                input_shape=[28, 28, 1],  # type: ignore
             )
         )
 
@@ -220,8 +249,24 @@ class GAN:
         for epoch in range(start_epoch, self.epochs):
             start = time.time()
 
-            for image_batch in dataset:
-                self.train_step(image_batch)
+            print(f"\nEpoch {epoch + 1}/{self.epochs}")
+
+            # Stepping with progress bar
+            progress = tf.keras.utils.Progbar(
+                target=len(dataset),
+                unit_name="batch",
+            )
+
+            for batch_index, image_batch in enumerate(dataset):
+                gen_loss, disc_loss = self.train_step(image_batch)
+
+                progress.update(
+                    batch_index + 1,
+                    values=[
+                        ("gen_loss", float(gen_loss.numpy())),
+                        ("disc_loss", float(disc_loss.numpy())),
+                    ],
+                )
 
             self.completed_epochs.assign(epoch + 1)
             self.generate_and_save_images(epoch + 1)
@@ -255,12 +300,7 @@ class GAN:
             ax.axis("off")
 
             if index < count:
-                ax.imshow(
-                    images[index, :, :, 0],
-                    cmap="gray",
-                    vmin=0,
-                    vmax=1,
-                )
+                ax.imshow(images[index])
 
         fig.tight_layout()
 
@@ -269,7 +309,6 @@ class GAN:
         plt.close(fig)
 
     def save_model(self):
-        # TODO: Should have settings file and output settings when saving model
         model_path = self.model_dir / f"{self.model_name}.keras"
         self.generator.save(str(model_path))
         print(f"Generator saved: {model_path}")
@@ -298,10 +337,21 @@ class GAN:
 
 
 if __name__ == "__main__":
+    settings = {
+        "model_name": "cat_gan",
+        "buffer_size": 60000,
+        "batch_size": 256,
+        "epochs": 500,
+        "noise_dim": 100,
+        "examples_to_generate": 16,
+        "leaky": False,
+        "save_interval": 15,
+        "checkpoint_dir": "training_checkpoints",
+    }
+
     gan = GAN(settings)
 
-    # Download and prepare MNIST.
-    gan.load_data(dir_path=None)
+    gan.load_image_directory(Path(r"C:\Users\foste\Downloads\cat image dataset"))
 
     # Check the model shapes before training.
     noise = tf.random.normal([1, gan.noise_dim])
@@ -311,6 +361,6 @@ if __name__ == "__main__":
     print("Generator output:", generated_image.shape)
     print("Discriminator output:", prediction.shape)
 
+    gan.save_settings()
     gan.train(gan.train_dataset)
     gan.save_model()
-    gan.save_settings()
