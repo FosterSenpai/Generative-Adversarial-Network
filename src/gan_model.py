@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
+import csv
 
 """ SETTINGS LOOKS LIKE THIS
 settings = {
@@ -250,8 +251,9 @@ class GAN:
             start = time.time()
 
             print(f"\nEpoch {epoch + 1}/{self.epochs}")
+            gen_average = tf.keras.metrics.Mean()
+            disc_average = tf.keras.metrics.Mean()
 
-            # Stepping with progress bar
             progress = tf.keras.utils.Progbar(
                 target=len(dataset),
                 unit_name="batch",
@@ -260,12 +262,35 @@ class GAN:
             for batch_index, image_batch in enumerate(dataset):
                 gen_loss, disc_loss = self.train_step(image_batch)
 
+                # Weight by batch size because the last batch may be smaller.
+                batch_count = tf.shape(image_batch)[0]
+                gen_average.update_state(gen_loss, sample_weight=batch_count)
+                disc_average.update_state(disc_loss, sample_weight=batch_count)
+
                 progress.update(
                     batch_index + 1,
                     values=[
                         ("gen_loss", float(gen_loss.numpy())),
                         ("disc_loss", float(disc_loss.numpy())),
                     ],
+                )
+
+            # Saving history after each epoch
+            history_path = self.model_dir / "loss_history.csv"
+            write_header = not history_path.exists() or history_path.stat().st_size == 0
+
+            with history_path.open("a", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+
+                if write_header:
+                    writer.writerow(["epoch", "gen_loss", "disc_loss"])
+
+                writer.writerow(
+                    [
+                        epoch + 1,
+                        float(gen_average.result().numpy()),
+                        float(disc_average.result().numpy()),
+                    ]
                 )
 
             self.completed_epochs.assign(epoch + 1)
