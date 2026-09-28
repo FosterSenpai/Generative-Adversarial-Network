@@ -1,12 +1,7 @@
 ## Experiment XX — brief name
 
-### Identity
-
 - Model name:
 - Architecture version:
-- Date:
-- Code commit:
-- Compared with:
 
 ### Change and reason
 
@@ -47,17 +42,3 @@ Use the same preview noise and compare matching epochs.
 | Typical training seconds per epoch     |          |                 |
 | Generator loss at comparison epoch     |          |                 |
 | Discriminator loss at comparison epoch |          |                 |
-
-### Observations
-
-- Recognizable cat features:
-- Grid artifacts:
-- Variation between samples:
-- Blur or distortion:
-- Training stability:
-
-### Conclusion
-
-- Outcome: improved / mixed / worse / inconclusive
-- Evidence:
-- Next experiment:
