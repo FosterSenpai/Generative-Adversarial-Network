@@ -26,13 +26,9 @@ settings = {
 
 class GAN:
     def __init__(self, settings: dict):
-        self.generator_optimizer = tf.keras.optimizers.Adam(1e-4)
-        self.discriminator_optimizer = tf.keras.optimizers.Adam(1e-4)
-
-        self.train_dataset = None
-
         # Unpacking settings
         self.model_name = settings["model_name"]
+        self.learning_rate = settings["learning_rate"]
         self.buffer_size = settings["buffer_size"]
         self.batch_size = settings["batch_size"]
         self.epochs = settings["epochs"]
@@ -40,9 +36,29 @@ class GAN:
         self.examples_to_generate = settings["examples_to_generate"]
         self.save_interval = settings["save_interval"]
         self.is_leaky = settings["leaky"]
+        self.image_size = settings["image_size"]
+        self.channels = settings["channels"]
+        self.architecture_version = settings["architecture_version"]
+        self.preprocessing = settings[
+            "preprocessing"
+        ]  # Could apply different preprocessing based off this string
+
+        # Settings checks
+        if (self.image_size, self.channels) != (32, 3):
+            raise ValueError("The current architecture requires 32×32 RGB images.")
+        if self.architecture_version != "dcgan_rgb_v1":
+            raise ValueError("Unsupported architecture version.")
+        if self.preprocessing != "bilinear_resize_stretch_rgb_minus1_plus1":
+            raise ValueError("Unsupported preprocessing.")
 
         self.generator = self.create_generator(self.is_leaky)
         self.discriminator = self.create_discriminator(self.is_leaky)
+
+        self.generator_optimizer = tf.keras.optimizers.Adam(self.learning_rate)
+        self.discriminator_optimizer = tf.keras.optimizers.Adam(self.learning_rate)
+
+        self.train_dataset = None
+        self.dataset_source = None
 
         self.model_dir = Path(settings["checkpoint_dir"]) / self.model_name
         self.checkpoint_dir = self.model_dir / "checkpoints"
@@ -76,7 +92,12 @@ class GAN:
             seed=[42, 0],  # type: ignore
         )
 
-    def load_data(self, images):
+    def load_data(self, images, *, source: str):
+        """Load an image array dataset
+        Args:
+            images: The images to load.
+            source (str): A string describing the dataset source for documentation.
+        """
         images = np.asarray(images)
 
         # Safety checks
@@ -100,6 +121,8 @@ class GAN:
             .prefetch(tf.data.AUTOTUNE)
         )
 
+        self.dataset_source = source
+
     def load_image_directory(self, dir_path: Path | str):
         dir_path = Path(dir_path)
 
@@ -119,6 +142,8 @@ class GAN:
             lambda images: (images - 127.5) / 127.5,
             num_parallel_calls=tf.data.AUTOTUNE,
         ).prefetch(tf.data.AUTOTUNE)
+
+        self.dataset_source = str(dir_path.resolve())
 
     def handle_relu(self, leaky, model):
         if leaky:
@@ -292,8 +317,10 @@ class GAN:
 
         latest_checkpoint = self.checkpoint_manager.latest_checkpoint
         if latest_checkpoint:
+            self.validate_resume_settings()
             self.checkpoint.restore(latest_checkpoint)
             print(f"Restored checkpoint: {latest_checkpoint}")
+        self.save_settings()
 
         start_epoch = int(self.completed_epochs.numpy())
 
@@ -399,21 +426,88 @@ class GAN:
         self.generator.save(str(model_path))
         print(f"Generator saved: {model_path}")
 
-    def save_settings(self):
+    def get_config(self):
         config = {
+            # Experiment
             "model_name": self.model_name,
-            "checkpoint_dir": str(self.model_dir.parent),
-            "buffer_size": self.buffer_size,
-            "batch_size": self.batch_size,
-            "epochs": self.epochs,
+            "architecture_version": self.architecture_version,
+            # Image preparation
+            "dataset_source": self.dataset_source,
+            "image_size": self.image_size,
+            "channels": self.channels,
+            "preprocessing": self.preprocessing,
+            # Network
             "noise_dim": self.noise_dim,
-            "examples_to_generate": self.examples_to_generate,
-            "save_interval": self.save_interval,
             "leaky": self.is_leaky,
+            # Training
+            "epochs": self.epochs,
+            "batch_size": self.batch_size,
+            "buffer_size": self.buffer_size,
+            "learning_rate": self.learning_rate,
+            # Saving and previews
+            "checkpoint_dir": str(self.model_dir.parent),
+            "save_interval": self.save_interval,
+            "examples_to_generate": self.examples_to_generate,
         }
+        return config
 
+    def validate_resume_settings(self):
+        """Checks if config for model being resumed matches set config to avoid clashes."""
+
+        # Get current and saved settings
+        settings_path = self.model_dir / "settings.json"
+        if (
+            not settings_path.exists()
+        ):  # TODO: Maybe add a force to override this if no settings.
+            raise ValueError(
+                "Checkpoint found, but settings.json is missing."
+                "Cannot verify that run is compatible."
+            )
+        with settings_path.open("r", encoding="utf-8") as file:
+            saved = json.load(file)
+        current = self.get_config
+
+        # These must stay consistent across experments CANNOT BE CHANGED
+        required_keys = (
+            "architecture_version",
+            "dataset_source",
+            "image_size",
+            "channels",
+            "preprocessing",
+            "noise_dim",
+            "leaky",
+            "learning_rate",
+        )
+
+        # Checking for any missing keys in saved settings
+        missing = [key for key in required_keys if key not in saved]
+        if missing:
+            raise ValueError(
+                "Saved settings are missing these fields: " + ", ".join(missing)
+            )
+
+        # Checking for differences
+        differences = []
+        for key in required_keys:
+            saved_value = saved[key]
+            current_value = current[key]
+
+            if saved_value != current_value:
+                differences.append(
+                    f"{key}: saved={saved_value}, current={current_value}"
+                )
+
+        if differences:
+            details = "\n".join(differences)
+            raise ValueError(
+                f"Settings do not match the saved experiment:\n{details}\n"
+                "Use a new model name for a different experiment."
+            )
+
+    def save_settings(self):
+        config = self.get_config()
         with open(self.model_dir / "settings.json", "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2, sort_keys=True)
+            json.dump(config, f, indent=2)
 
         print(f"Settings saved: {self.model_dir / 'settings.json'}")
 
@@ -465,17 +559,28 @@ class GAN:
         pass
 
 
+# Example test, training on dataset of cats
 if __name__ == "__main__":
     settings = {
+        # Experiment
         "model_name": "cat_gan",
-        "buffer_size": 60000,
-        "batch_size": 256,
-        "epochs": 500,
+        "architecture_version": "dcgan_rgb_v1",
+        # Image preparation
+        "image_size": 32,
+        "channels": 3,
+        "preprocessing": "bilinear_resize_stretch_rgb_minus1_plus1",  # Describe preproccesses done, will handle logic based on this later
+        # Network
         "noise_dim": 100,
-        "examples_to_generate": 16,
         "leaky": False,
-        "save_interval": 15,
+        # Training
+        "epochs": 500,
+        "batch_size": 256,
+        "buffer_size": 60000,
+        "learning_rate": 1e-4,
+        # Saving and previews
         "checkpoint_dir": "training_checkpoints",
+        "save_interval": 15,
+        "examples_to_generate": 16,
     }
 
     gan = GAN(settings)
@@ -491,6 +596,5 @@ if __name__ == "__main__":
     print("Generator output:", generated_image.shape)
     print("Discriminator output:", prediction.shape)
 
-    gan.save_settings()
     gan.train(gan.train_dataset)
     gan.save_model()
