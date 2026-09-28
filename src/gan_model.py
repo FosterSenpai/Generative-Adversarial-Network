@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
+import signal
 
 """ SETTINGS LOOKS LIKE THIS
 settings = {
@@ -31,7 +32,6 @@ class GAN:
             settings (dict): Dictionary describing settings of experiment.
             force (bool, optional): Override and ignore settings validation when resuming from checkpoint. Defaults to False.
         """
-        self.force = force
         # Unpacking settings
         self.model_name = settings["model_name"]
         self.learning_rate = settings["learning_rate"]
@@ -56,6 +56,9 @@ class GAN:
             raise ValueError("Unsupported architecture version.")
         if self.preprocessing != "bilinear_resize_stretch_rgb_minus1_plus1":
             raise ValueError("Unsupported preprocessing.")
+
+        self.force = force
+        self.stop_requested = False
 
         self.generator = self.create_generator(self.is_leaky)
         self.discriminator = self.create_discriminator(self.is_leaky)
@@ -97,6 +100,11 @@ class GAN:
             [self.examples_to_generate, self.noise_dim],
             seed=[42, 0],  # type: ignore
         )
+
+    def request_stop(self, signum, frame):
+        if not self.stop_requested:
+            self.stop_requested = True
+            print("\nStop requested. Finishing current epoch before saving.")
 
     def load_data(self, images, *, source: str):
         """Load an image array dataset
@@ -391,13 +399,22 @@ class GAN:
             self.completed_epochs.assign(epoch + 1)
             self.generate_and_save_images(epoch + 1)
 
-            # Saving on interval
-            if (epoch + 1) % self.save_interval == 0 or (epoch + 1) == self.epochs:
+            # Handle stopping
+            stop_after_epoch = self.stop_requested
+            if (
+                (epoch + 1) % self.save_interval == 0
+                or (epoch + 1) == self.epochs
+                or stop_after_epoch
+            ):
                 checkpoint_path = self.checkpoint_manager.save()
                 print(f"Checkpoint saved: {checkpoint_path}")
 
             elapsed = time.time() - start
             print(f"Time for epoch {epoch + 1}: {elapsed:.2f} sec")
+
+            if stop_after_epoch:
+                print(f"Training stopped after epoch {epoch + 1}.")
+                break
 
     def generate_and_save_images(self, epoch):
         predictions = self.generator(self.preview_noise, training=False)
@@ -472,7 +489,7 @@ class GAN:
             )
         with settings_path.open("r", encoding="utf-8") as file:
             saved = json.load(file)
-        current = self.get_config
+        current = self.get_config()
 
         # These must stay consistent across experments CANNOT BE CHANGED
         required_keys = (
@@ -497,7 +514,7 @@ class GAN:
         differences = []
         for key in required_keys:
             saved_value = saved[key]
-            current_value = current[key]  # type: ignore
+            current_value = current[key]
 
             if saved_value != current_value:
                 differences.append(
@@ -590,7 +607,8 @@ if __name__ == "__main__":
         "examples_to_generate": 16,
     }
 
-    gan = GAN(settings, force=True)
+    gan = GAN(settings)
+    signal.signal(signal.SIGINT, gan.request_stop)  # Stop training on ctrl C
 
     gan.load_image_directory(Path(r"C:\Users\foste\Downloads\cat image dataset"))
     gan.save_training_preview()
