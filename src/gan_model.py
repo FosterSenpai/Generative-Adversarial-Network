@@ -226,7 +226,7 @@ class GAN:
         self.handle_relu(leaky, model)
         model.add(layers.Dropout(0.3))
 
-        model.add(layers.Conv2D(64, (5, 5), strides=(2, 2), padding="same"))
+        model.add(layers.Conv2D(128, (5, 5), strides=(2, 2), padding="same"))
         self.handle_relu(leaky, model)
         model.add(layers.Dropout(0.3))
 

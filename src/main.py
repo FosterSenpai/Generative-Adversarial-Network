@@ -8,8 +8,8 @@ from gan_model import GAN
 
 settings = {
     # Experiment
-    "model_name": "cat_gan_kernel4_leakyd_v1",
-    "architecture_version": "dcgan_rgb_kernel4_leakyd_v1",
+    "model_name": "cat_gan_kernel4_leakyd_disc128_v1",
+    "architecture_version": "dcgan_rgb_kernel4_leakyd_disc128_v1",
     # Image preparation
     "image_size": 32,
     "channels": 3,
@@ -19,7 +19,7 @@ settings = {
     "generator_leaky": False,
     "discriminator_leaky": True,
     # Training
-    "epochs": 100,
+    "epochs": 300,
     "batch_size": 256,
     "buffer_size": 60000,
     "learning_rate": 1e-4,
