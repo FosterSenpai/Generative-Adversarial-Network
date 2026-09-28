@@ -360,6 +360,7 @@ class GAN:
             progress = tf.keras.utils.Progbar(
                 target=len(dataset),
                 unit_name="batch",
+                stateful_metrics=["gen_loss", "disc_loss"],
             )
 
             for batch_index, image_batch in enumerate(dataset):
@@ -373,8 +374,8 @@ class GAN:
                 progress.update(
                     batch_index + 1,
                     values=[
-                        ("gen_loss", float(gen_loss.numpy())),
-                        ("disc_loss", float(disc_loss.numpy())),
+                        ("gen_loss", float(gen_average.result().numpy())),
+                        ("disc_loss", float(disc_average.result().numpy())),
                     ],
                 )
 
