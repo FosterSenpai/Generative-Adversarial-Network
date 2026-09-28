@@ -1,4 +1,6 @@
+import csv
 import json
+import shutil
 import time
 from pathlib import Path
 
@@ -6,7 +8,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
-import csv
 
 """ SETTINGS LOOKS LIKE THIS
 settings = {
@@ -230,6 +231,61 @@ class GAN:
 
         return gen_loss, disc_loss
 
+    def reconcile_loss_history(self, completed_epoch):
+        """Trim any rows in history newer than the restored checkpoint to avoid overlap"""
+        history_path = self.model_dir / "loss_history.csv"
+
+        if not history_path.exists() or history_path.stat().st_size == 0:  # No history
+            return
+
+        # Read rows
+        with history_path.open("r", newline="", encoding="utf-8") as file:
+            reader = csv.DictReader(file)
+            fieldnames = reader.fieldnames
+
+            if not fieldnames or "epoch" not in fieldnames:
+                raise ValueError("Loss history is missing its epoch column.")
+
+            rows = list(reader)
+
+        # Keep before current
+        keeping = {}
+        for row in rows:
+            epoch = int(row["epoch"])
+
+            if 1 <= epoch <= completed_epoch:
+                keeping[epoch] = row
+
+        cleaned_rows = [keeping[epoch] for epoch in sorted(keeping)]
+
+        if cleaned_rows == rows:
+            return
+
+        # Write into temp file then replace
+        temp_path = history_path.with_suffix(".tmp")
+        with temp_path.open("w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(cleaned_rows)
+        temp_path.replace(history_path)
+
+    def reconcile_preview_images(self, completed_epoch):
+        """Remove genereated previews newer than the restored checkpoint"""
+        removed = 0
+
+        for image_path in self.image_dir.glob("image_at_epoch_*.png"):
+            epoch_text = image_path.stem.removeprefix("image_at_epoch_")
+
+            if not epoch_text.isdecimal():
+                continue
+
+            if int(epoch_text) > completed_epoch:
+                image_path.unlink()
+                removed += 1
+
+        if removed:
+            print(f"Removed {removed} previews newer than epoch {completed_epoch}.")
+
     def train(self, dataset):
         if dataset is None:
             raise ValueError("Load training data before calling train()")
@@ -240,6 +296,11 @@ class GAN:
             print(f"Restored checkpoint: {latest_checkpoint}")
 
         start_epoch = int(self.completed_epochs.numpy())
+
+        # Reconcile recorded stats and images to not be newer than restored checkpoint
+        self.reconcile_loss_history(start_epoch)
+        self.reconcile_preview_images(start_epoch)
+
         # Only save the untrained preview for a fresh run.
         if start_epoch == 0:
             self.generate_and_save_images(epoch=0)
