@@ -8,8 +8,8 @@ from gan_model import GAN
 
 settings = {
     # Experiment
-    "model_name": "cat_gan_v1",
-    "architecture_version": "dcgan_rgb_v1",
+    "model_name": "cat_gan_kernel4_v1",
+    "architecture_version": "dcgan_rgb_kernel4_v1",
     # Image preparation
     "image_size": 32,
     "channels": 3,
@@ -24,7 +24,7 @@ settings = {
     "learning_rate": 1e-4,
     # Saving and previews
     "checkpoint_dir": "training_checkpoints",
-    "save_interval": 15,
+    "save_interval": 20,
     "examples_to_generate": 16,
 }
 

@@ -60,10 +60,6 @@ class GAN:
         # Settings checks
         if (self.image_size, self.channels) != (32, 3):
             raise ValueError("The current architecture requires 32×32 RGB images.")
-        if self.architecture_version != "dcgan_rgb_v1":
-            raise ValueError("Unsupported architecture version.")
-        if self.preprocessing != "bilinear_resize_stretch_rgb_minus1_plus1":
-            raise ValueError("Unsupported preprocessing.")
 
         self.force = force
         self.stop_requested = False
@@ -193,7 +189,7 @@ class GAN:
 
         model.add(
             layers.Conv2DTranspose(
-                64, (5, 5), strides=[2, 2], padding="same", use_bias=False
+                64, (4, 4), strides=[2, 2], padding="same", use_bias=False
             )
         )
         model.add(layers.BatchNormalization())
@@ -202,7 +198,7 @@ class GAN:
         model.add(
             layers.Conv2DTranspose(
                 3,
-                (5, 5),
+                (4, 4),
                 strides=[2, 2],
                 padding="same",
                 use_bias=False,
