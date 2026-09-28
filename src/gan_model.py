@@ -25,7 +25,13 @@ settings = {
 
 
 class GAN:
-    def __init__(self, settings: dict):
+    def __init__(self, settings: dict, force: bool = False):
+        """
+        Args:
+            settings (dict): Dictionary describing settings of experiment.
+            force (bool, optional): Override and ignore settings validation when resuming from checkpoint. Defaults to False.
+        """
+        self.force = force
         # Unpacking settings
         self.model_name = settings["model_name"]
         self.learning_rate = settings["learning_rate"]
@@ -317,7 +323,8 @@ class GAN:
 
         latest_checkpoint = self.checkpoint_manager.latest_checkpoint
         if latest_checkpoint:
-            self.validate_resume_settings()
+            if not self.force:
+                self.validate_resume_settings()
             self.checkpoint.restore(latest_checkpoint)
             print(f"Restored checkpoint: {latest_checkpoint}")
         self.save_settings()
@@ -490,7 +497,7 @@ class GAN:
         differences = []
         for key in required_keys:
             saved_value = saved[key]
-            current_value = current[key]
+            current_value = current[key]  # type: ignore
 
             if saved_value != current_value:
                 differences.append(
@@ -583,7 +590,7 @@ if __name__ == "__main__":
         "examples_to_generate": 16,
     }
 
-    gan = GAN(settings)
+    gan = GAN(settings, force=True)
 
     gan.load_image_directory(Path(r"C:\Users\foste\Downloads\cat image dataset"))
     gan.save_training_preview()
