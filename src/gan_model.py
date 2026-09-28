@@ -78,11 +78,11 @@ class GAN:
     def load_data(self, images):
         images = np.asarray(images)
 
+        # Safety checks
         if images.ndim != 4 or images.shape[-1] != 3:
             raise ValueError(
                 f"Expected RGB images shapes (N, height, width, 3).Got {images.shape}."
             )
-
         if len(images) == 0:
             raise ValueError("The dataset containes no images.")
 
@@ -356,6 +356,49 @@ class GAN:
 
         print(f"Settings saved: {self.model_dir / 'settings.json'}")
 
+    def save_training_preview(self):
+        if self.train_dataset is None:
+            raise ValueError("Load training data before saving a preview.")
+
+        # Collect individual images, even if they span multiple batches.
+        images = list(
+            self.train_dataset.unbatch()
+            .take(self.examples_to_generate)
+            .as_numpy_iterator()
+        )
+
+        if not images:
+            raise ValueError("The training dataset contains no images.")
+
+        # Convert normalized pixels back to [0, 1] for display.
+        images = np.clip((np.stack(images) + 1.0) / 2.0, 0.0, 1.0)
+
+        count = len(images)
+        columns = int(np.ceil(np.sqrt(count)))
+        rows = int(np.ceil(count / columns))
+
+        fig, axes = plt.subplots(
+            rows,
+            columns,
+            figsize=(columns * 2, rows * 2),
+            squeeze=False,
+        )
+
+        for index, ax in enumerate(axes.flat):
+            ax.axis("off")
+
+            if index < count:
+                ax.imshow(images[index], interpolation="nearest")
+
+        fig.tight_layout()
+
+        # Keep the reference separate from generated epoch images.
+        preview_path = self.model_dir / "real_training_preview.png"
+        fig.savefig(preview_path)
+        plt.close(fig)
+
+        print(f"Training preview saved: {preview_path}")
+
     def output_report(self):
         # TODO: Should find a way to output report on training like a notebook showing loss, imgs etc
         pass
@@ -377,6 +420,7 @@ if __name__ == "__main__":
     gan = GAN(settings)
 
     gan.load_image_directory(Path(r"C:\Users\foste\Downloads\cat image dataset"))
+    gan.save_training_preview()
 
     # Check the model shapes before training.
     noise = tf.random.normal([1, gan.noise_dim])
