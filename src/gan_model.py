@@ -19,7 +19,8 @@ from tensorflow.keras import layers
         "preprocessing": "bilinear_resize_stretch_rgb_minus1_plus1",  # Describe preproccesses done, will handle logic based on this later
         # Network
         "noise_dim": 100,
-        "leaky": False,
+        "generator_leaky": False,
+        "discriminator_leaky": True,
         # Training
         "epochs": 500,
         "batch_size": 256,
@@ -49,7 +50,8 @@ class GAN:
         self.noise_dim = settings["noise_dim"]
         self.examples_to_generate = settings["examples_to_generate"]
         self.save_interval = settings["save_interval"]
-        self.is_leaky = settings["leaky"]
+        self.generator_leaky = settings["generator_leaky"]
+        self.discriminator_leaky = settings["discriminator_leaky"]
         self.image_size = settings["image_size"]
         self.channels = settings["channels"]
         self.architecture_version = settings["architecture_version"]
@@ -64,8 +66,8 @@ class GAN:
         self.force = force
         self.stop_requested = False
 
-        self.generator = self.create_generator(self.is_leaky)
-        self.discriminator = self.create_discriminator(self.is_leaky)
+        self.generator = self.create_generator(self.generator_leaky)
+        self.discriminator = self.create_discriminator(self.discriminator_leaky)
 
         self.generator_optimizer = tf.keras.optimizers.Adam(self.learning_rate)
         self.discriminator_optimizer = tf.keras.optimizers.Adam(self.learning_rate)
@@ -472,7 +474,8 @@ class GAN:
             "preprocessing": self.preprocessing,
             # Network
             "noise_dim": self.noise_dim,
-            "leaky": self.is_leaky,
+            "generator_leaky": self.generator_leaky,
+            "discriminator_leaky": self.discriminator_leaky,
             # Training
             "epochs": self.epochs,
             "batch_size": self.batch_size,
@@ -509,7 +512,8 @@ class GAN:
             "channels",
             "preprocessing",
             "noise_dim",
-            "leaky",
+            "generator_leaky",
+            "discriminator_leaky",
             "learning_rate",
         )
 

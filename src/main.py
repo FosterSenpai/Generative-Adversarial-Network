@@ -8,15 +8,16 @@ from gan_model import GAN
 
 settings = {
     # Experiment
-    "model_name": "cat_gan_kernel4_v1",
-    "architecture_version": "dcgan_rgb_kernel4_v1",
+    "model_name": "cat_gan_kernel4_leakyd_v1",
+    "architecture_version": "dcgan_rgb_kernel4_leakyd_v1",
     # Image preparation
     "image_size": 32,
     "channels": 3,
     "preprocessing": "bilinear_resize_stretch_rgb_minus1_plus1",  # Describe preproccesses done, will handle logic based on this later
     # Network
     "noise_dim": 100,
-    "leaky": False,
+    "generator_leaky": False,
+    "discriminator_leaky": True,
     # Training
     "epochs": 100,
     "batch_size": 256,
