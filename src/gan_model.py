@@ -325,10 +325,22 @@ class GAN:
         if removed:
             print(f"Removed {removed} previews newer than epoch {completed_epoch}.")
 
+    def record_epoch(self, epoch, gen_loss, disc_loss, training_seconds):
+        history_path = self.model_dir / "loss_history.csv"
+        write_header = not history_path.exists() or history_path.stat().st_size == 0
+
+        with history_path.open("a", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            if write_header:
+                writer.writerow(["epoch", "gen_loss", "disc_loss", "training_seconds"])
+
+            writer.writerow([epoch, gen_loss, disc_loss, round(training_seconds, 3)])
+
     def train(self, dataset):
         if dataset is None:
             raise ValueError("Load training data before calling train()")
 
+        # LOADING CHECKPOINT
         latest_checkpoint = self.checkpoint_manager.latest_checkpoint
         if latest_checkpoint:
             if not self.force:
@@ -350,23 +362,26 @@ class GAN:
             print(f"Already completed {start_epoch} epochs.")
             return
 
+        # TRAINING LOOP
         for epoch in range(start_epoch, self.epochs):
             start = time.time()
 
+            # Progress Bar
             print(f"\nEpoch {epoch + 1}/{self.epochs}")
             gen_average = tf.keras.metrics.Mean()
             disc_average = tf.keras.metrics.Mean()
-
             progress = tf.keras.utils.Progbar(
                 target=len(dataset),
                 unit_name="batch",
                 stateful_metrics=["gen_loss", "disc_loss"],
             )
 
+            # Process Batches
             for batch_index, image_batch in enumerate(dataset):
+                # Progress training step
                 gen_loss, disc_loss = self.train_step(image_batch)
 
-                # Weight by batch size because the last batch may be smaller.
+                # Weighting by batch size because the last batch may be smaller.
                 batch_count = tf.shape(image_batch)[0]
                 gen_average.update_state(gen_loss, sample_weight=batch_count)
                 disc_average.update_state(disc_loss, sample_weight=batch_count)
@@ -379,24 +394,14 @@ class GAN:
                     ],
                 )
 
-            # Saving history after each epoch
-            history_path = self.model_dir / "loss_history.csv"
-            write_header = not history_path.exists() or history_path.stat().st_size == 0
-
-            with history_path.open("a", newline="", encoding="utf-8") as file:
-                writer = csv.writer(file)
-
-                if write_header:
-                    writer.writerow(["epoch", "gen_loss", "disc_loss"])
-
-                writer.writerow(
-                    [
-                        epoch + 1,
-                        float(gen_average.result().numpy()),
-                        float(disc_average.result().numpy()),
-                    ]
-                )
-
+            # SAVING AND CLOSING
+            # Saving history
+            self.record_epoch(
+                epoch=epoch + 1,
+                gen_loss=float(gen_average.result().numpy()),
+                disc_loss=float(disc_average.result().numpy()),
+                training_seconds=time.time() - start,
+            )
             self.completed_epochs.assign(epoch + 1)
             self.generate_and_save_images(epoch + 1)
 
