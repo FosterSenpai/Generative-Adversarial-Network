@@ -189,19 +189,17 @@ class GAN:
         model.add(layers.BatchNormalization())
         self.handle_relu(leaky, model)
 
-        model.add(
-            layers.Conv2DTranspose(
-                64, (4, 4), strides=[2, 2], padding="same", use_bias=False
-            )
-        )
+        model.add(layers.UpSampling2D(size=(2, 2), interpolation="nearest"))
+        model.add(layers.Conv2D(64, (4, 4), padding="same", use_bias=False))
+
         model.add(layers.BatchNormalization())
         self.handle_relu(leaky, model)
 
+        model.add(layers.UpSampling2D(size=(2, 2), interpolation="nearest"))
         model.add(
-            layers.Conv2DTranspose(
+            layers.Conv2D(
                 3,
                 (4, 4),
-                strides=[2, 2],
                 padding="same",
                 use_bias=False,
                 activation="tanh",

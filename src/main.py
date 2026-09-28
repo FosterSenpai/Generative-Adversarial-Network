@@ -8,8 +8,8 @@ from gan_model import GAN
 
 settings = {
     # Experiment
-    "model_name": "cat_gan_kernel4_leakyd_disc128_v1",
-    "architecture_version": "dcgan_rgb_kernel4_leakyd_disc128_v1",
+    "model_name": "cat_gan_resize_disc128_v1",
+    "architecture_version": "dcgan_rgb_resize_disc128_v1",
     # Image preparation
     "image_size": 32,
     "channels": 3,
