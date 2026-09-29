@@ -8,10 +8,10 @@ from gan_model import GAN
 
 settings = {
     # Experiment
-    "model_name": "cat_gan_resize_disc128_v1",
-    "architecture_version": "dcgan_rgb_resize_disc128_v1",
+    "model_name": "cat_gan_dcgan64_reference_v1",
+    "architecture_version": "dcgan64_reference_v1",
     # Image preparation
-    "image_size": 32,
+    "image_size": 64,
     "channels": 3,
     "preprocessing": "bilinear_resize_stretch_rgb_minus1_plus1",  # Describe preproccesses done, will handle logic based on this later
     # Network
@@ -19,10 +19,11 @@ settings = {
     "generator_leaky": False,
     "discriminator_leaky": True,
     # Training
-    "epochs": 300,
-    "batch_size": 256,
+    "epochs": 500,
+    "batch_size": 128,
     "buffer_size": 60000,
-    "learning_rate": 1e-4,
+    "learning_rate": 0.0002,
+    "adam_beta1": 0.5,
     # Saving and previews
     "checkpoint_dir": "training_checkpoints",
     "save_interval": 20,

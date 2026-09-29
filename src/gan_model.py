@@ -58,10 +58,11 @@ class GAN:
         self.preprocessing = settings[
             "preprocessing"
         ]  # Could apply different preprocessing based off this string
+        self.adam_beta1 = settings["adam_beta1"]
 
         # Settings checks
-        if (self.image_size, self.channels) != (32, 3):
-            raise ValueError("The current architecture requires 32×32 RGB images.")
+        if (self.image_size, self.channels) != (64, 3):
+            raise ValueError("The current architecture requires 64×64 RGB images.")
 
         self.force = force
         self.stop_requested = False
@@ -69,8 +70,12 @@ class GAN:
         self.generator = self.create_generator(self.generator_leaky)
         self.discriminator = self.create_discriminator(self.discriminator_leaky)
 
-        self.generator_optimizer = tf.keras.optimizers.Adam(self.learning_rate)
-        self.discriminator_optimizer = tf.keras.optimizers.Adam(self.learning_rate)
+        self.generator_optimizer = tf.keras.optimizers.Adam(
+            self.learning_rate, beta_1=self.adam_beta1, beta_2=0.999
+        )
+        self.discriminator_optimizer = tf.keras.optimizers.Adam(
+            self.learning_rate, beta_1=self.adam_beta1, beta_2=0.999
+        )
 
         self.train_dataset = None
         self.dataset_source = None
@@ -130,7 +135,7 @@ class GAN:
 
         def prepare_image(image):
             image = tf.cast(image, tf.float32)
-            image = tf.image.resize(image, (32, 32))
+            image = tf.image.resize(image, (self.image_size, self.image_size))
             return (image - 127.5) / 127.5
 
         self.train_dataset = (
@@ -153,7 +158,7 @@ class GAN:
             str(dir_path),
             labels=None,
             color_mode="rgb",
-            image_size=(32, 32),
+            image_size=(self.image_size, self.image_size),
             batch_size=self.batch_size,
             shuffle=True,
         )
@@ -174,35 +179,71 @@ class GAN:
     def create_generator(self, leaky: bool = False):
         model = tf.keras.Sequential()
 
+        # Inputs noise
         model.add(layers.Input(shape=(self.noise_dim,)))
-        model.add(layers.Dense(8 * 8 * 256, use_bias=False))
-        model.add(layers.BatchNormalization())
-        self.handle_relu(leaky, model)
+        model.add(layers.Reshape((1, 1, self.noise_dim)))
 
-        model.add(layers.Reshape((8, 8, 256)))
-
+        # Initial 4x4 feature map
         model.add(
             layers.Conv2DTranspose(
-                128, (5, 5), strides=[1, 1], padding="same", use_bias=False
+                512,
+                kernel_size=4,
+                strides=1,
+                padding="valid",
+                use_bias=False,
+                kernel_initializer=tf.keras.initializers.RandomNormal(
+                    mean=0.0, stddev=0.02
+                ),
             )
         )
-        model.add(layers.BatchNormalization())
-        self.handle_relu(leaky, model)
-
-        model.add(layers.UpSampling2D(size=(2, 2), interpolation="nearest"))
-        model.add(layers.Conv2D(64, (4, 4), padding="same", use_bias=False))
-
-        model.add(layers.BatchNormalization())
-        self.handle_relu(leaky, model)
-
-        model.add(layers.UpSampling2D(size=(2, 2), interpolation="nearest"))
         model.add(
-            layers.Conv2D(
-                3,
-                (4, 4),
+            layers.BatchNormalization(
+                momentum=0.9,
+                epsilon=1e-5,
+                gamma_initializer=tf.keras.initializers.RandomNormal(
+                    mean=1.0, stddev=0.02
+                ),
+            )
+        )
+        model.add(layers.ReLU())
+
+        # Enlarging to 8x8, 16x16, 32x32
+        for filters in (256, 128, 64):
+            model.add(
+                layers.Conv2DTranspose(
+                    filters,
+                    kernel_size=4,
+                    strides=2,
+                    padding="same",
+                    use_bias=False,
+                    kernel_initializer=tf.keras.initializers.RandomNormal(
+                        mean=0.0, stddev=0.02
+                    ),
+                )
+            )
+            model.add(
+                layers.BatchNormalization(
+                    momentum=0.9,
+                    epsilon=1e-5,
+                    gamma_initializer=tf.keras.initializers.RandomNormal(
+                        mean=1.0, stddev=0.02
+                    ),
+                )
+            )
+            model.add(layers.ReLU())
+
+        # Produce final 64x64 RGB image
+        model.add(
+            layers.Conv2DTranspose(
+                self.channels,
+                kernel_size=4,
+                strides=2,
                 padding="same",
                 use_bias=False,
                 activation="tanh",
+                kernel_initializer=tf.keras.initializers.RandomNormal(
+                    mean=0.0, stddev=0.02
+                ),
             )
         )
 
@@ -211,25 +252,62 @@ class GAN:
     def create_discriminator(self, leaky: bool = False):
         model = tf.keras.Sequential()
 
-        model.add(layers.Input(shape=(32, 32, 3)))
+        model.add(layers.Input(shape=(self.image_size, self.image_size, self.channels)))
+
+        # Reduce down to 32x32
         model.add(
             layers.Conv2D(
                 64,
-                (5, 5),
-                strides=(2, 2),
+                kernel_size=4,
+                strides=2,
                 padding="same",
+                use_bias=False,
+                kernel_initializer=tf.keras.initializers.RandomNormal(
+                    mean=0.0, stddev=0.02
+                ),
             )
         )
+        model.add(layers.LeakyReLU(negative_slope=0.2))
 
-        self.handle_relu(leaky, model)
-        model.add(layers.Dropout(0.3))
+        # Reduce to 16x16, 8x8, 4x4
+        for filters in (128, 256, 512):
+            model.add(
+                layers.Conv2D(
+                    filters,
+                    kernel_size=4,
+                    strides=2,
+                    padding="same",
+                    use_bias=False,
+                    kernel_initializer=tf.keras.initializers.RandomNormal(
+                        mean=0.0, stddev=0.02
+                    ),
+                )
+            )
+            model.add(
+                layers.BatchNormalization(
+                    momentum=0.9,
+                    epsilon=1e-5,
+                    gamma_initializer=tf.keras.initializers.RandomNormal(
+                        mean=1.0, stddev=0.02
+                    ),
+                )
+            )
+            model.add(layers.LeakyReLU(negative_slope=0.2))
 
-        model.add(layers.Conv2D(128, (5, 5), strides=(2, 2), padding="same"))
-        self.handle_relu(leaky, model)
-        model.add(layers.Dropout(0.3))
-
+        # From 4x4 feature map to one real/fake output
+        model.add(
+            layers.Conv2D(
+                1,
+                kernel_size=4,
+                strides=1,
+                padding="valid",
+                use_bias=False,
+                kernel_initializer=tf.keras.initializers.RandomNormal(
+                    mean=0.0, stddev=0.02
+                ),
+            )
+        )
         model.add(layers.Flatten())
-        model.add(layers.Dense(1))
 
         return model
 
@@ -479,6 +557,7 @@ class GAN:
             "batch_size": self.batch_size,
             "buffer_size": self.buffer_size,
             "learning_rate": self.learning_rate,
+            "adam_beta1": self.adam_beta1,
             # Saving and previews
             "checkpoint_dir": str(self.model_dir.parent),
             "save_interval": self.save_interval,
@@ -513,6 +592,7 @@ class GAN:
             "generator_leaky",
             "discriminator_leaky",
             "learning_rate",
+            "adam_beta1",
         )
 
         # Checking for any missing keys in saved settings
